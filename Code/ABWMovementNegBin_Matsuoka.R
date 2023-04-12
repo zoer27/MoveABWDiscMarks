@@ -11,17 +11,18 @@ library(extraDistr)
 library(posterior)
 library(bayesplot)
 
+#for parallelization
 options(mc.cores = parallel::detectCores())
 
 #set_cmdstan_path("/Users/zrand/cmdstan") #to use specific version of stan
 cmdstan_version()
 
 # Importing Data ----------------------------------------------------------
-Catch_dat<-read_csv("Custom_Model/Data/catchcorrected.csv")
-Rec_dat<-read_csv("Custom_Model/Data/mark_recoveries_3groups.csv")
-Rel_dat<-read_csv("Custom_Model/Data/mark_releases.csv")
+Catch_dat<-read_csv("Data/catchcorrected.csv")
+Rec_dat<-read_csv("Data/mark_recoveries_3groups.csv")
+Rel_dat<-read_csv("Data/mark_releases.csv")
 #only includes years where areas IIIE-VIW were surveyed
-Abund_dat<-read_csv("Custom_Model/Data/basin_abundances_filteredMat.csv")
+Abund_dat<-read_csv("Data/basin_abundances_filteredMat.csv")
 # Functions ---------------------------------------------------------------
 source("Custom_Model/Data_Manip_Functions.R") #for stay function
 
@@ -177,7 +178,7 @@ mcmc_acf(draws_array, pars = vars(MAA, MAB, MAC, MBA, MBB, MBC, MCA, MCB, MCC), 
 mcmc_rhat_hist(rhats) 
 
 
-#paramter densities
+#parameter densities
 plot1<-mcmc_areas(fit$draws(c("lnK")))
 plot1
 plot2<-mcmc_areas(fit$draws(c("tl")))
