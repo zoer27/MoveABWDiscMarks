@@ -12,17 +12,17 @@ library(ggridges)
 options(mc.cores = parallel::detectCores())
 
 # Data ----------------------------------------------------------
-Abund_Dat<-read_csv("Custom_Model/Data/basin_abundances_withMat.csv") #for dates and basins of abundance estimates
+Abund_Dat<-read_csv("Data/basin_abundances_withHamabe.csv") #for dates and basins of abundance estimates
 AtYears<-Abund_Dat %>% filter(Basin == "Atlantic") %>% dplyr::select(Year) %>% as.matrix()
 IndYears<-Abund_Dat %>% filter(Basin == "Indian") %>% dplyr::select(Year) %>% as.matrix()
 PacYears<-Abund_Dat %>% filter(Basin == "Pacific") %>% dplyr::select(Year) %>% as.matrix()
 #last year is 2008
 
 #release data
-Rel_dat<-read_csv("Custom_Model/Data/mark_releases.csv")
+Rel_dat<-read_csv("Data/mark_releases.csv")
 
 #catch data
-Catch_dat<-read_csv("Custom_Model/Data/catchcorrected.csv")
+Catch_dat<-read_csv("Data/catchcorrected.csv")
 
 # Simulation Function ---------------------------------------------
 
