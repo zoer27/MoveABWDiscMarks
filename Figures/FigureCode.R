@@ -310,6 +310,155 @@ Figure4()
 
 
 # Figure 5 ----------------------------------------------------------------
+Figure5<-function(){
+  #abundance data
+  #turn CVS into sigmas
+  Abund_dat$C<-exp(1.96 * sqrt(log(1+Abund_dat$CV^2)))
+  Abund_dat$Lower<-Abund_dat$PopSize/Abund_dat$C
+  Abund_dat$Upper<-Abund_dat$PopSize*Abund_dat$C
+  
+  bckgrd<-"transparent"
+  #library(grid)
+  #library(gtable)
+  ThinnedQ<-subset_draws(draws_array, variable = "q")
+  ThinnedPPBr<-subset_draws(draws_array, variable = "PostPredBr")
+  
+  #3/3/23 note these are actually hamabe but didn't want to change variable names
+  ThinnedPPMatInd<-subset_draws(draws_array, variable = "PostPredMatInd")
+  ThinnedPPMatPac<-subset_draws(draws_array, variable = "PostPredMatPac")
+  
+  
+  #PPMatIndQ<-rep(ThinnedQ[,, variable = "q[1]"], each = 10) * ThinnedPPMatInd #don't need this because automatically accounted for in rng
+  #PPMatPacQ<-rep(ThinnedQ[,, variable = "q[2]"], each = 10) * ThinnedPPMatPac #don't need this because automatically accounted for in rng
+  Quants_PPBr<-summarise_draws(ThinnedPPBr, "median", ~quantile(.x, probs = c(0.025, 0.975)))[c("median", "2.5%", "97.5%")]
+  QuantsMIQ<-summarise_draws(ThinnedPPMatInd, "median", ~quantile(.x, probs = c(0.025, 0.975)))[c("median", "2.5%", "97.5%")]
+  QuantsMPQ<-summarise_draws(ThinnedPPMatPac, "median", ~quantile(.x, probs = c(0.025, 0.975)))[c("median", "2.5%", "97.5%")]
+  
+  
+  Quants_PPBr_violin<-ThinnedPPBr %>% as_draws_matrix %>% as_tibble %>% pivot_longer(everything(), names_to = "Par", values_to = "PopSize") %>% add_column(Year = rep(Abund_dat$Year[1:9], 4000), Basin = rep(Abund_dat$Basin[1:9], 4000))
+  Quants_MIQ_violin<-ThinnedPPMatInd %>% as_draws_matrix %>% as_tibble %>% pivot_longer(everything(), names_to = "Par", values_to = "PopSize") %>% add_column(Year = rep(Abund_dat$Year[10:19], 4000), Basin = rep(Abund_dat$Basin[10:19], 4000))
+  Quants_MPQ_violin<-ThinnedPPMatPac %>% as_draws_matrix %>% as_tibble %>% pivot_longer(everything(), names_to = "Par", values_to = "PopSize") %>% add_column(Year = rep(Abund_dat$Year[20:29], 4000), Basin = rep(Abund_dat$Basin[20:29], 4000))
+  
+  
+  
+  PopQuantsViolin<-bind_rows(Quants_PPBr_violin, Quants_MIQ_violin, Quants_MPQ_violin) %>% add_column(Source = c(rep(Abund_dat$Source[1:9], 4000), rep(Abund_dat$Source[10:19], 8000)))
+  source.labs<-c("Branch 2007", "Hamabe et al. 2023")
+  names(source.labs)<-c("Branch", "Hamabe")
+  
+  PPAbund<-ggplot() + geom_violin(data = PopQuantsViolin, aes(x = as.factor(Year), y = PopSize), fill = "gray60", color = "gray60", alpha = 0.5) + 
+    geom_point(data = Abund_dat, aes(x = as.factor(Year), y = PopSize, color = Basin)) + 
+    geom_linerange(data = Abund_dat, aes(x = as.factor(Year), ymin = Lower, ymax = Upper, color = Basin), size = 0.5) +
+    facet_grid(Source ~ Basin, scales = "free_x", labeller = labeller(Source = source.labs)) + 
+    scale_color_manual(values = clrs) + #scale_fill_manual(values = clrs)+
+    scale_x_discrete(expand = c(0, 1)) + 
+    scale_y_continuous(limits = c(0, 2600), breaks = seq(0, 2400, by  = 400)) + 
+    labs(y = "Population Size", x = "Year")  + 
+    theme_bw() + theme(legend.position = "none",
+                       legend.background = element_rect(fill = bckgrd),
+                       panel.background = element_rect(fill = bckgrd), 
+                       panel.border = element_blank(),
+                       panel.grid = element_blank(),
+                       plot.background = element_rect(fill = bckgrd, color = NA),
+                       #axis.text = element_text(colour = txt, size = rel(0.8)), 
+                       axis.text.x = element_text(angle =90, size = rel(1.2), vjust = 0.5, hjust=1), 
+                       axis.text.y = element_text(size = rel(1.2)),
+                       axis.ticks = element_line(colour = "gray70"), 
+                       axis.line = element_line(colour = "gray70", size = rel(1)), 
+                       #axis.title = element_text(size = rel(1.7)),
+                       axis.title = element_blank(),
+                       strip.background = element_blank(), 
+                       strip.text.x = element_text(size = rel(1.5)),
+                       strip.text.y = element_blank(),
+                       plot.tag.position = "topleft", 
+                       plot.title = element_text(size = rel(1.7)), 
+                       #text = element_text(family = "Arial")
+    ) + 
+    ggtitle("Posterior predictive distribution")
+  
+  
+  PPAbund
+  
+  #getting rid of empty panel
+  PPAbundgrob<-ggplotGrob(PPAbund)
+  
+  #gtable_show_layout(PPAbundgrob) 
+  PPAbundgrob$layout$name
+  idx <- which(PPAbundgrob$layout$name %in% c("panel-2-1"));
+  for (i in idx) PPAbundgrob$grobs[[i]] <- nullGrob();
+  #grid.draw(PPAbundgrob)
+  
+  #move y axis over
+  
+  idx <- which(PPAbundgrob$layout$name %in% c("axis-l-2"));
+  PPAbundgrob$layout[idx, c("l", "r")] <- PPAbundgrob$layout[idx, c("l", "r")] + c(2);
+  #grid.draw(PPAbundgrob)
+  
+  #move x axis up
+  idx <- which(PPAbundgrob$layout$name %in% c("axis-b-1"));
+  PPAbundgrob$layout[idx, c("t", "b")] <- PPAbundgrob$layout[idx, c("t", "b")] - c(2);
+  grid.newpage();
+  grid.draw(PPAbundgrob)
+  PPAbund_violin<-as.ggplot(~plot(PPAbundgrob))
+  PPAbund_violin
+  #ggsave("Custom_Model/Figures/PPAbund_bar.png",PPAbundgrob, dpi = 600)
+  
+  #population trajectory
+  bckgrd<-"#FFFFFF"
+  txt<-"#000000"
+  nyears<-length(Years)
+  
+  
+  ThinnedNPop<-subset_draws(StanThinned, variable = "Npop")
+  NpopAt<-summarise_draws(ThinnedNPop, ~quantile(.x, probs = c(0.025, 0.5, 0.975)))[1:nyears, c("50%", "2.5%", "97.5%")] %>% rename(median = "50%", q2.5 = "2.5%", q97.5 = "97.5%")
+  NpopIn<-summarise_draws(ThinnedNPop, ~quantile(.x, probs = c(0.025, 0.5, 0.975)))[(nyears+1):(2*nyears), c("50%", "2.5%", "97.5%")] %>% rename(median = "50%", q2.5 = "2.5%", q97.5 = "97.5%")
+  NpopPac<-summarise_draws(ThinnedNPop, ~quantile(.x, probs = c(0.025, 0.5, 0.975)))[(2*nyears + 1):(3*nyears), c("50%", "2.5%", "97.5%")] %>% rename(median = "50%", q2.5 = "2.5%", q97.5 = "97.5%")
+  
+  NpopAt$Basin<-rep("Atlantic", nyears)
+  NpopIn$Basin<-rep("Indian", nyears)
+  NpopPac$Basin<-rep("Pacific", nyears)
+  
+  #combine:
+  NpopStanAllYr<-bind_rows(NpopAt, NpopIn, NpopPac)
+  NpopStanAllYr$Year<-rep(Years,3)
+  
+  
+  
+  popplot<-ggplot(data = NpopStanAllYr) + 
+    geom_ribbon(aes(x = Year, ymin = q2.5, ymax = q97.5, fill = Basin), alpha = 0.3) + 
+    geom_line(aes(x = Year, y = median, color = Basin)) + 
+    #geom_point(data = Abund_dat, aes(x = Year, y = PopSize, color = Basin)) + 
+    #geom_linerange(data = Abund_dat, aes(x = Year, ymin = Lower, ymax = Upper, color = Basin), linetype = "twodash") +
+    labs(y = "Population size")+ 
+    scale_y_continuous(labels = comma, breaks = c(0,5000, 10000,50000,75000,100000), expand = c(0,0))  + 
+    scale_x_continuous(expand = c(0,0), breaks = c(seq(1910, 2000, by =10 ))) + expand_limits(y = c(0,100000), x = c(1913, 2001)) +scale_color_manual(values = clrs) + scale_fill_manual(values = clrs) +  
+    theme_classic() + theme(legend.background = element_rect(fill = bckgrd),
+                            panel.background = element_rect(fill = bckgrd), 
+                            plot.background = element_rect(fill = bckgrd),
+                            axis.text = element_text(size = rel(1.5)), 
+                            axis.ticks = element_line(colour = "gray70"), 
+                            axis.line = element_line(colour = "gray70", size = rel(1)), 
+                            axis.title = element_text(size = rel(1.7)), 
+                            panel.border = element_blank(), 
+                            legend.position = "bottom", 
+                            plot.title = element_text(size = rel(1.7)), 
+                            #text = element_text(family = "arial"),
+                            legend.text=element_text(size= rel(1.3)), 
+                            legend.title = element_text(size = rel(1.3))
+    ) 
+  popplot
+  
+  
+  popplot3<-popplot + ggtitle("Posterior distribution")
+  
+  abundfig2<-ggdraw(popplot3 ) +
+    draw_plot(PPAbundgrob, 0.33, 0.2, 0.65, 0.75) + 
+    draw_label(source.labs[1], x = c(0.98), y = c(0.75), angle = c(270), size = 12, fontfamily = "Arial") + 
+    draw_label(source.labs[2], x = c(0.98), y = c(0.40), angle = c(270), size = 12, fontfamily = "Arial")
+  return(abundfig2)
+}
+
+
+# Figure 6 ----------------------------------------------------------------
 
 
 
