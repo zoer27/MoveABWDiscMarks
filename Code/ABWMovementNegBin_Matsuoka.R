@@ -1,9 +1,8 @@
 ###ABW Movement Model fitting to Matsuoka and Hakamada 2014 Abundance Data
 ##Negative binomial likelihood for tags, fixed survival, estimated r
 ###K in each basin determined by the stationary distribution of m
-#only uses abundance estimates from years where all areas (IIIE-VIW) are surveyed
 #Zoe Rand
-#2/27/22  
+#2/22/23 
 library(tidyverse)
 library(cmdstanr)
 library(coda)
@@ -18,14 +17,13 @@ options(mc.cores = parallel::detectCores())
 cmdstan_version()
 
 # Importing Data ----------------------------------------------------------
-Catch_dat<-read_csv("Data/catchcorrected.csv")
-Rec_dat<-read_csv("Data/mark_recoveries_3groups.csv")
-Rel_dat<-read_csv("Data/mark_releases.csv")
-#only includes years where areas IIIE-VIW were surveyed
-Abund_dat<-read_csv("Data/basin_abundances_filteredMat.csv")
-# Functions ---------------------------------------------------------------
-source("Custom_Model/Data_Manip_Functions.R") #for stay function
+Catch_dat<-read_csv("FINAL Code/Data/catchcorrected.csv")
+Rec_dat<-read_csv("FINAl Code/Data/mark_recoveries_3groups.csv")
+Rel_dat<-read_csv("FINAL Code/Data/mark_releases.csv")
+Abund_dat<-read_csv("FINAL Code/Data/basin_abundances_Mat.csv")
 
+# Functions ---------------------------------------------------------------
+source("FINAL Code/Functions/Data_Manip_Functions.R") #for stay function
 # Data--------------------------------------------
 
 #Basin Information 
@@ -59,9 +57,6 @@ Rel_mat<-Rel_dat %>%
 Rel_mat<-Rel_mat[,-1]
 nyeartag<-nrow(Rel_mat)
 
-#fixed parameters
-#r<-0.073
-#s<-0.96
 
 
 #Abundance Estimates
@@ -90,16 +85,15 @@ Pac_index_Mat<-which(Years %in% Pac_year_Mat)
 
 
 
-
 # Running Stan Model ------------------------------------------------------
 
 the_data <- list(ABr=N_abunddat_Br, AMat = N_abunddat_Mat, AMat2 = N_abunddat_Mat/2, Nbasin = N_basin, Ibasin = Basin_index,  NyearAbund = Nyear_pop,
                  Nyearcatch = N_yearcatch, Nyeartag = nyeartag, AEstBr = Abund_Est_Br, ACVBr = Abund_CV_Br, NAYearBr = 3, AEstMatInd = Abund_Est_Mat_Ind, 
                  AEstMatPac = Abund_Est_Mat_Pac, ACVMat = Abund_CV_Mat, NAYearMat = 7, AYear = At_index, IYearBr = In_index_Br, PYearBr = Pac_index_Br, IYearMat = In_index_Mat, PYearMat = Pac_index_Mat, 
-                 Catch = catch_mat, Rec = Rec_mat, Rel = Rel_mat,ub = 0.34, s = 0.96)
+                 Catch = catch_mat, Rec = Rec_mat, Rel = Rel_mat,ub = 0.499, s = 0.96)
 
 #initial value function 
-#MSY fun gives you MSY based on the r and K you draw--helps give realistic intial values
+#MSY fun gives you MSY based on the r and K you draw--helps get reasonable initial values
 MSYfun<-function(K, r){
   s = 0.96
   r_star = r/(1-s)
@@ -120,8 +114,7 @@ init_fun <- function() {
 
 #compiling model
 
-
-file<-"Custom_Model/ABWMovementNegBinomial.stan"
+file<-"FINAL Code/ABWMovementNegBinomial.stan"
 mod<-cmdstan_model(file) 
 
 #sampling from model
@@ -134,29 +127,30 @@ fit <- mod$sample(data = the_data, seed = 400, refresh = 200,
 
 #saving model fit--note with cmdstan need to save using save_object, which saves all of the draws otherwise you might not get all of them
 
-#fit$save_object(file = "Results/FitJARPA3723.RDS")
+fit$save_object(file = "FINAL Code/Results/FitNB_Matsuoka_ub05_112323.RDS")
 
 
-#fit<-readRDS(file = "Custom_Model/Results/FitJARPA31423.RDS")
 
-parsofint<-c("lnK", "K", "m", "tl", "r", "q", "lnMSY", "theta") #filters out posterior predictives so only gives parameters of interest
+parsofint<-c("lnK", "K", "m", "tl", "r", "q", "lnMSY", "theta")
 sumstats<-fit$summary(parsofint) %>% left_join(fit$summary(parsofint, ~quantile(.x, probs = c(0.025, 0.975))))
 sumstats
-#write_csv(sumstats, "Custom_Model/Results/sumstatsJARPA31423.csv")
+#write_csv(sumstats, "Results/sumstats22323.csv")
 fit$cmdstan_diagnose()
 
-#saving RStan version of fit
 
 #converting to stanfit--need to do this for model comparison
 library(rstan)
 fit2<-rstan::read_stan_csv(fit$output_files())
-#saveRDS(fit2, "Custom_Model/Results/FitNB12522Stanfit.RDS")
+#saveRDS(fit2, "Results/FitNB22223Stanfit.RDS")
+
+
 
 
 # Diagnostic Plots --------------------------------------------------------
 #library(bayesplot)
 draws_array<-fit$draws()
-apply(draws_array[,,"lp__"], 2, summary) #looking for chains that didn't make it to the optimal space
+#lets you know if any chains didn't make it to the optimal space
+apply(draws_array[,,"lp__"], 2, summary) 
 
 
 lp_fit<-log_posterior(fit)
@@ -168,7 +162,7 @@ mcmc_trace(fit$draws(c("lnK", "m", "tl", "r","q", "lnMSY", "theta")), facet_args
 
 #divergences
 mcmc_nuts_divergence(np_fit, lp_fit) 
-mcmc_nuts_divergence(np_fit, lp_fit, chain = 1) #can look at any concerning chains
+mcmc_nuts_divergence(np_fit, lp_fit, chain = 1) #if there are concerning chains can highlight specific ones
 
 #autocorrelation
 mcmc_acf(draws_array, pars = vars(lnK, tl, r), lags = 10)
@@ -178,7 +172,7 @@ mcmc_acf(draws_array, pars = vars(MAA, MAB, MAC, MBA, MBB, MBC, MCA, MCB, MCC), 
 mcmc_rhat_hist(rhats) 
 
 
-#parameter densities
+#paramter densities
 plot1<-mcmc_areas(fit$draws(c("lnK")))
 plot1
 plot2<-mcmc_areas(fit$draws(c("tl")))
@@ -188,7 +182,7 @@ plot3
 plot4<-mcmc_areas(fit$draws(c("m")))
 plot4
 
-library(patchwork)
+#library(patchwork)
 plot1 + plot2/plot3 + plot4
 
 

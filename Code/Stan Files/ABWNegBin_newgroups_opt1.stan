@@ -1,4 +1,4 @@
-////Updated Model fitting to actual Abundance Data
+////Updated Model fitting to actual Abundance Data--New groups Option 1
 //Poisson likelihood for tags, fixed survival, estimated r
 //explicit incorporation of survival in the popualtion model
 //includes Matsouka abundance estimates and q parameters for Indian and Pacific estimated with MLE methods
@@ -12,10 +12,13 @@
 //updated 11/8/22 to use informative prior for S instead of fixing it
 //updated 11/21/22 back to fixed s, and includes log likelihood generated quantities for model selection
 //11/29/22 added negative binomial back in for mark recovery data
+//8/21/23 adding option so I can re-run this with new groups
+//9/20/23 splitting new groups into two different stan files
 data {
   int<lower=0> ABr; //number data points for abundance, Branch
-  int<lower = 0> AMat; //number of data points for abdundance, Matsouka
-  int<lower = 0> AMat2; //number of data points in one basin Matsouka
+  int<lower = 0> AMat; //number of data points for Indian abdundance, Matsouka
+  int<lower = 0> AMat2; //number of data points in Pacific basin Matsouka
+  int<lower = 0> AMat3; //1 if option 1, 0 if otherwise, to account for the 0 that isn't in the Indian
   int<lower=0> Nbasin; //number of basins
   int<lower = 0> Ibasin[Nbasin]; //index for basins
   int<lower=0> NyearAbund; //number of years for abundance model(total years of trajectory)
@@ -23,16 +26,22 @@ data {
   int<lower=0> Nyeartag; //number of years with tagging data (recoveries)
   vector[ABr] AEstBr; //Abundance Estimates, Branch
   vector[ABr] ACVBr; //Abundance CV, Branch
-  vector[AMat2] AEstMatInd; //Abundance Estimates Matsouka--Indian
+  int<lower = 0> NCV; //Total number of CVs in Matusoka/Hamabe
+  vector[AMat] AEstMatInd; //Abundance Estimates Matsouka--Indian
   vector[AMat2] AEstMatPac; //Abundance Estimates Matsouka -- Pacific
-  vector[AMat] ACVMat; //Abundance CV Matsouka
+  vector[NCV] ACVMat; //Abundance CV Matsouka
+  array[AMat] int IndCVIdx; //Index for CVs from indian--remove CV from 0
+  array[AMat2] int PacCVIdx; //Index for CVs from Pacific
+  array[AMat3] int ZeroCVIdx; //Index for CVs from Zero estimate
   int<lower=0> NAYearBr; //Number of years with abundance estimates in each basin (from branch)
-  int<lower=0> NAYearMat; //Number of years with abundance estimates in each basin (from Matsouka)
+  int<lower=0> NAYearMatI; //Number of years with abundance estimates in each basin (from Matsouka)
+  int<lower=0> NAYearMatP; //Number of years with abundance estimates in each basin (from Matsouka)
   int<lower = 0> AYear[NAYearBr]; //index indicating the years of the trajectory that have Abudance estiamtes in Atlantic
   int<lower = 0> IYearBr[NAYearBr]; //index indicating the years of the trajectory that have Abudance estiamtes in Indian, Branch
   int<lower = 0> PYearBr[NAYearBr]; //index indicating the years of the trajectory that have Abudance estiamtes in Pacific, Branch
-  int<lower = 0>IYearMat[NAYearMat];//index indicating the years of the trajectory that have Abudance estiamtes in Indian, Matsouka
-  int<lower=0>PYearMat[NAYearMat]; //index indicating the years of the trajectory that have Abudance estiamtes in Pacific, Matsouka
+  int<lower = 0>IYearMat[NAYearMatI];//index indicating the years of the trajectory that have Abudance estiamtes in Indian, Matsouka
+  int<lower=0>PYearMat[NAYearMatP]; //index indicating the years of the trajectory that have Abudance estiamtes in Pacific, Matsouka
+  int<lower=0>NormYear[AMat3]; //index for year that should use a normal distribution in option 1
   matrix[Nyearcatch, Nbasin] Catch;//Matrix of catches in each basin and year
   int<lower = 0> Rec[Nyeartag-1, Nbasin*Nbasin]; //recoveries, needs to be an array for negative binomial likelihood
   matrix[Nyeartag, Nbasin] Rel; //releases
@@ -44,7 +53,7 @@ transformed data{
   int<lower = 0> NYNocatch = NyearAbund - Nyearcatch;
   matrix[NyearAbund, Nbasin] CatchAll;
   matrix[NYNocatch, Nbasin] NoCatch;
-  vector[ABr + AMat] ACV; //all the abundance estimate CVs
+  vector[ABr + NCV] ACV; //all the abundance estimate CVs
   
   ACV = append_row(ACVBr, ACVMat); 
   //real r_star; //transformed r for explicitly incorporating survival
@@ -67,6 +76,7 @@ parameters {
   real<lower = 0, upper = 1> tl; //tag loss parameter
   real<lower = 0.001> inv_theta; //overdispersion--but actually 1/sqrt(theta), the bound makes it halfnormal
   //real<lower = 0.93, upper = 0.99> s; //natural survival truncated normal prior
+  //real<lower = 0, upper = 1> q[2]; //adding in q parameter as parameter instead of calculation
 }
 
 transformed parameters{
@@ -86,7 +96,7 @@ transformed parameters{
   //vector[Nbasin] dist; //equilibirium proportions 
   real<lower = 0> theta; //transformation of overdispersion
   real r_star; //transformed r for explicitly incorporating survival
-  vector[ABr+AMat] sig; //vector for sigma values for likelihood
+  vector[ABr+NCV] sig; //vector for sigma values for likelihood
   
   
   //transformation into r_star
@@ -131,7 +141,7 @@ transformed parameters{
      MSY[n] = ((1-s)*r_star*K[n]*2.39)/((3.39)^((1/2.39) + 1));
   }
   //converting to sigma for lognormal from cvs (for both Mat and Branch)
-    for(i in 1:(ABr+AMat)){
+    for(i in 1:(ABr+NCV)){
       sig[i] = sqrt(log((ACV[i])^2 + 1)); 
     }
     //conversion of theta for negative binomial
@@ -141,8 +151,10 @@ transformed parameters{
 model {
   matrix[NyearAbund, Nbasin] Npop;//population 
   vector[ABr] PredAbundBr; //vector for subsetting population predictions (Branch)
-  vector[AMat2] PredAbundMatInd; //vector for subsetting population predictions, Indian (Matsouka)
+  vector[AMat] PredAbundMatInd; //vector for subsetting population predictions, Indian (Matsouka)
+  //vector[AMat] PredAbundMatInd2; //vector including the 0 (group B)
   vector[AMat2] PredAbundMatPac; //vector for population predictions, Pacific, (Matsouka)
+  vector[1]PredAbundNorm; //for one year that has a normal distribution in option 1
   vector[2] q; //q for Matsouka abundance, one for each basin (Indian and Pacific)
   matrix[Nyeartag, Nbasin*Nbasin] NT; //predicted number of tags
   row_vector[Nbasin] new_tags; //vector of new tags for each year
@@ -165,6 +177,9 @@ model {
   MBC ~ uniform(0, ub);
   MCA ~ uniform(0, ub);
   MCB ~ uniform(0,ub);
+  //for(i in 1:2){
+    //q[i] ~ beta(1,1);
+  //}
   
   //s ~ normal(0.96, 0.02);
   
@@ -194,7 +209,7 @@ model {
     for (i in 1:(Nyeartag)){ //harvest rates start in 1926 and ends in 1972
       for (I in Ibasin){
         h[i,I] = CatchAll[i+22,I]/Npop[i+22,I];
-        h[i,I] = fmin(h[i,I], 1); //harvest rate can't be more than 1 (if pop is 1 then all whales are harvested and harvest rate is 1)
+        h[i,I] = fmin(h[i,I], 0.999); //harvest rate can't be more than 1 (if pop is 1 then all whales are harvested and harvest rate is 1)
         }
       }
       
@@ -261,28 +276,38 @@ model {
     }
     
     //getting abundance predictions Matsouka
-    for(i in 1:NAYearMat){
+    for(i in 1:(NAYearMatI)){
       PredAbundMatInd[i] = Npop[IYearMat[i], Ibasin[2]];
     }
-    for(i in 1:NAYearMat){
+      PredAbundNorm = Npop[NormYear, Ibasin[2]]; //get the prediction for the 0
+      //PredAbundMatInd2 = append_row(PredAbundMatInd, PredAbundNorm); //adding 0 to end for q
+      
+    for(i in 1:NAYearMatP){
       PredAbundMatPac[i] = Npop[PYearMat[i], Ibasin[3]];
-    }
+      }
+    
+   
     
     
     //likelihood for abundance 
     
     //lognormal likelihood -- Branch 
     AEstBr ~ lognormal(log(PredAbundBr), sig[1:ABr]);
-    
+    //print(PredAbundMatInd);
     //qs for Mat abundance estimates --from MLE
       q[1] = exp(mean(log(AEstMatInd./PredAbundMatInd))); //Indian
       q[2] = exp(mean(log(AEstMatPac./PredAbundMatPac))); //Pacific
+      
+      //q[1] = fmax(q[1], 0.0001);
+      //print(q);
       q[1] = fmin(q[1], 1);//if q > 1, brings it back down to 1 -should make this not fit the data well and move away from this space
       q[2] = fmin(q[2], 1);
+      //print(q);
     //lognormal likelihood--Matsouka
-    AEstMatInd ~ lognormal(log(q[1] * PredAbundMatInd), sig[(ABr+1):(AMat2 + ABr)]); //Indian 
-    AEstMatPac ~ lognormal(log(q[2]*PredAbundMatPac), sig[(AMat2 + ABr + 1): (2*AMat2 + ABr)]);//Pacific
-    
+    AEstMatInd ~ lognormal(log(q[1] * PredAbundMatInd), sig[IndCVIdx]); //Indian not including last one
+    0 ~ normal(q[1]*PredAbundNorm, sig[ZeroCVIdx]); //for 0 in 1995
+    AEstMatPac ~ lognormal(log(q[2]*PredAbundMatPac), sig[PacCVIdx]);//Pacific
+
    //likelihood for tags
    for (i in 1:(Nyeartag-1)){
      //Rec[i,] ~ poisson(NTR[i,]);
@@ -296,21 +321,24 @@ generated quantities{
   matrix[Nyeartag, Nbasin] h; //harvest rates
   vector[2] q; //q parameter for Matsouka abundance estimates
   array[ABr] real PostPredBr; //Posterior predictive for Abundance Estimates, Branch
-  array[AMat2] real PostPredMatInd; //Posterior predictive Abundance Estimates Matsouka--Indian
+  array[AMat] real PostPredMatInd; //Posterior predictive Abundance Estimates Matsouka--Indian
+  array[AMat3] real PostPredZero; //Posterior predictive for the zero abundance estimate
   array[AMat2] real PostPredMatPac; //Posterior predictive Abundance Estimates Matsouka -- Pacific
   array[Nyeartag-1, Nbasin*Nbasin] int<lower =0> PostPredRec; //Posterior Predictive mark recoveries
-  vector[ABr+AMat2 + AMat2 +((Nyeartag -1)*Nbasin*Nbasin)] log_like; //vector of loglikelihood values for model selection, Rec values are created in a matrix and then returned in column-major order
+  vector[ABr+AMat + AMat2 +((Nyeartag -1)*Nbasin*Nbasin)] log_like; //vector of loglikelihood values for model selection, Rec values are created in a matrix and then returned in column-major order
    {
     vector[ABr] PredAbundBr; //vector for subsetting population predictions (Branch)
-    vector[AMat2] PredAbundMatInd; //vector for subsetting population predictions, Indian (Matsouka)
+    vector[AMat] PredAbundMatInd; //vector for subsetting population predictions, Indian (Matsouka)
     vector[AMat2] PredAbundMatPac; //vector for population predictions, Pacific, (Matsouka)
+    vector[AMat3] PredAbundNorm;
+    vector[AMat] PredAbundMatInd2; //vector including the 0 (group B)
     matrix[Nyeartag, Nbasin*Nbasin] NT; //predicted number of tags
     row_vector[Nbasin] new_tags; //vector of new tags for each year
     matrix[(Nyeartag-1), Nbasin] PredH;
     matrix[(Nyeartag-1), Nbasin*Nbasin] PredRec; //predicted recoveries that match up with data
     vector[ABr] loglikeAbundBr; //vectors for storing individual log likelihoods
     vector[AMat2] loglikeAbundMatInd;
-    vector[AMat2] loglikeAbundMatPac;
+    //vector[AMat2] loglikeAbundMatPac;
     matrix[Nyeartag-1, Nbasin*Nbasin]loglikeRec;
     
      //pop model
@@ -331,7 +359,8 @@ generated quantities{
       }
     Npop[i,] = Npop[i,] * m;
     }
-    //getting abundance predictions for same year and basins as data--Branch
+
+     //getting abundance predictions for same year and basins as data--Branch
     
     for(i in 1:NAYearBr){
       PredAbundBr[i] = Npop[AYear[i], Ibasin[1]];
@@ -342,17 +371,24 @@ generated quantities{
     for(j in (NAYearBr + NAYearBr + 1): (NAYearBr + NAYearBr + NAYearBr)){
       PredAbundBr[j] = Npop[PYearBr[j-6], Ibasin[3]];
     }
-      //getting abundance predictions Matsouka
-    for(i in 1:NAYearMat){
+    
+    //getting abundance predictions Matsouka
+    for(i in 1:(NAYearMatI)){
       PredAbundMatInd[i] = Npop[IYearMat[i], Ibasin[2]];
     }
-    for(i in 1:NAYearMat){
+      PredAbundNorm = Npop[NormYear, Ibasin[2]]; //get the prediction for the 0
+      //PredAbundMatInd2 = append_row(PredAbundMatInd, PredAbundNorm); //adding 0 to end for q
+      
+    for(i in 1:NAYearMatP){
       PredAbundMatPac[i] = Npop[PYearMat[i], Ibasin[3]];
-    }
+      }
+   
     
     //calculating q
-    q[1] = exp(mean(log(AEstMatInd./PredAbundMatInd))); //Indian
+    q[1] = exp(mean(log(AEstMatInd./PredAbundMatInd)));
     q[2] = exp(mean(log(AEstMatPac./PredAbundMatPac))); //Pacific
+    //q[1] = fmax(q[1], 0.000001);
+    //print(q);
     q[1] = fmin(q[1], 1);//if q > 1, brings it back down to 1 -should make this not fit the data well and move away from this space
     q[2] = fmin(q[2], 1);
   //tag recovery model
@@ -362,7 +398,7 @@ generated quantities{
     for (i in 1:(Nyeartag)){ //harvest rates start in 1926 and ends in 1972
       for (I in Ibasin){
         h[i,I] = CatchAll[i+22,I]/Npop[i+22,I];
-        h[i,I] = fmin(h[i,I], 1); //harvest rate can't be more than 1 (if pop is 1 then all whales are harvested and harvest rate is 1)
+        h[i,I] = fmin(h[i,I], 0.999); //harvest rate can't be more than 1 (if pop is 1 then all whales are harvested and harvest rate is 1)
         }
     }
       
@@ -406,12 +442,14 @@ generated quantities{
         NTR[i,k] = fmax(NTR[i,k], 0.001);//if 0 is in predictions replace with 0.001 so likelihood works
         }
     }
+   
     
     
   //posterior predictive-- Abundance
     PostPredBr = lognormal_rng(log(PredAbundBr), sig[1:ABr]);
-    PostPredMatInd = lognormal_rng(log(q[1] * PredAbundMatInd), sig[(ABr+1):(AMat2 + ABr)]); //Indian 
-    PostPredMatPac = lognormal_rng(log(q[2]*PredAbundMatPac), sig[(AMat2 + ABr + 1): (2*AMat2 + ABr)]);//Pacific
+    PostPredMatInd = lognormal_rng(log(q[1] * PredAbundMatInd), sig[IndCVIdx]); //Indian 
+    PostPredZero = normal_rng(q[1]*PredAbundNorm, sig[ZeroCVIdx]);
+    PostPredMatPac = lognormal_rng(log(q[2]*PredAbundMatPac), sig[PacCVIdx]);//Pacific
     
     
     //posterior predictive -- Mark recoveries
@@ -419,29 +457,34 @@ generated quantities{
       //PostPredRec[i,] = poisson_rng(NTR[i,]);
       PostPredRec[i,] = neg_binomial_2_rng(NTR[i,], theta);
    }
-   //loglikelihoods for model selection
-   for(j in 1:ABr){
-     loglikeAbundBr[j] = lognormal_lpdf(AEstBr[j]|log(PredAbundBr[j]), sig[j]);
-   }
-   for(j in 1:AMat2){
-     loglikeAbundMatInd[j] = lognormal_lpdf(AEstMatInd[j]|log(q[1]*PredAbundMatInd[j]), sig[j + ABr]);
-     loglikeAbundMatPac[j] = lognormal_lpdf(AEstMatPac[j]| log(q[2]*PredAbundMatPac[j]), sig[j + AMat2 + ABr]);
-   }
-   for(t in 1:(Nyeartag-1)){
-     for(k in 1:(Nbasin*Nbasin)){
+   //loglikelihoods for model selection--NOTE THIS DOESN'T WORK FOR THE NEW GROUPS
+   //for(j in 1:ABr){
+     //loglikeAbundBr[j] = lognormal_lpdf(AEstBr[j]|log(PredAbundBr[j]), sig[j]);
+   //}
+   //for(j in 1:AMat2){
+     //loglikeAbundMatInd[j] = lognormal_lpdf(AEstMatInd[j]|log(q[1]*PredAbundMatInd[j]), sig[j + ABr]);
+     //loglikeAbundMatPac[j] = lognormal_lpdf(AEstMatPac[j]| log(q[2]*PredAbundMatPac[j]), sig[j + AMat2 + ABr]);
+   //}
+   //for(t in 1:(Nyeartag-1)){
+     //for(k in 1:(Nbasin*Nbasin)){
        //loglikeRec[t,k] = poisson_lpmf(Rec[t,k]|NTR[t,k]);
-       loglikeRec[t,k] = neg_binomial_2_lpmf(Rec[t,k]|NTR[t,k], theta);
-     }
+       //loglikeRec[t,k] = neg_binomial_2_lpmf(Rec[t,k]|NTR[t,k], theta);
+     //}
      
    }
    
-   log_like[1:ABr] = loglikeAbundBr;
-   log_like[(ABr+1):(AMat2+ABr)] = loglikeAbundMatInd;
-   log_like[(ABr+AMat2+1):(ABr+AMat2+AMat2)] = loglikeAbundMatPac;
-   log_like[(ABr+AMat2+AMat2+1):(ABr+AMat2+AMat2 + ((Nyeartag-1)*Nbasin*Nbasin))] = to_vector(loglikeRec);
+   //log_like[1:ABr] = loglikeAbundBr;
+   //log_like[(ABr+1):(AMat2+ABr)] = loglikeAbundMatInd;
+   //log_like[(ABr+AMat2+1):(ABr+AMat2+AMat2)] = loglikeAbundMatPac;
+   //log_like[(ABr+AMat2+AMat2+1):(ABr+AMat2+AMat2 + ((Nyeartag-1)*Nbasin*Nbasin))] = to_vector(loglikeRec);
    
-   }
+   //}
    
-  }
+}
+
+
+
+
+
 
 

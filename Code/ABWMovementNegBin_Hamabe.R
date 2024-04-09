@@ -17,13 +17,13 @@ options(mc.cores = parallel::detectCores())
 cmdstan_version()
 
 # Importing Data ----------------------------------------------------------
-Catch_dat<-read_csv("Custom_Model/Data/catchcorrected.csv")
-Rec_dat<-read_csv("Custom_Model/Data/mark_recoveries_3groups.csv")
-Rel_dat<-read_csv("Custom_Model/Data/mark_releases.csv")
-Abund_dat<-read_csv("Custom_Model/Data/basin_abundances_withHamabe.csv")
+Catch_dat<-read_csv("Data/catchcorrected.csv")
+Rec_dat<-read_csv("Data/mark_recoveries_3groups.csv")
+Rel_dat<-read_csv("Data/mark_releases.csv")
+Abund_dat<-read_csv("Data/basin_abundances_withHamabe.csv")
 
 # Functions ---------------------------------------------------------------
-source("Custom_Model/Data_Manip_Functions.R") #for stay function
+source("Functions/Data_Manip_Functions.R") #for stay function
 # Data--------------------------------------------
 
 #Basin Information 
@@ -90,7 +90,7 @@ Pac_index_Mat<-which(Years %in% Pac_year_Mat)
 the_data <- list(ABr=N_abunddat_Br, AMat = N_abunddat_Mat, AMat2 = N_abunddat_Mat/2, Nbasin = N_basin, Ibasin = Basin_index,  NyearAbund = Nyear_pop,
                  Nyearcatch = N_yearcatch, Nyeartag = nyeartag, AEstBr = Abund_Est_Br, ACVBr = Abund_CV_Br, NAYearBr = 3, AEstMatInd = Abund_Est_Mat_Ind, 
                  AEstMatPac = Abund_Est_Mat_Pac, ACVMat = Abund_CV_Mat, NAYearMat = 10, AYear = At_index, IYearBr = In_index_Br, PYearBr = Pac_index_Br, IYearMat = In_index_Mat, PYearMat = Pac_index_Mat, 
-                 Catch = catch_mat, Rec = Rec_mat, Rel = Rel_mat,ub = 0.34, s = 0.96)
+                 Catch = catch_mat, Rec = Rec_mat, Rel = Rel_mat,ub = 0.499, s = 0.96)
 
 #initial value function 
 #MSY fun gives you MSY based on the r and K you draw--helps get reasonable initial values
@@ -114,7 +114,7 @@ init_fun <- function() {
 
 #compiling model
 
-file<-"Codfe/Stan Filesl/ABWMovementNegBinomial.stan"
+file<-"FINAL Code/ABWMovementNegBinomial.stan"
 mod<-cmdstan_model(file) 
 
 #sampling from model
@@ -127,14 +127,14 @@ fit <- mod$sample(data = the_data, seed = 400, refresh = 200,
 
 #saving model fit--note with cmdstan need to save using save_object, which saves all of the draws otherwise you might not get all of them
 
-#fit$save_object(file = "Results/FitNB_Hamabe_22323.RDS")
+fit$save_object(file = "FINAL Code/Results/FitNB_Hamabe_ub05_102323.RDS")
 
 
 
 parsofint<-c("lnK", "K", "m", "tl", "r", "q", "lnMSY", "theta")
 sumstats<-fit$summary(parsofint) %>% left_join(fit$summary(parsofint, ~quantile(.x, probs = c(0.025, 0.975))))
 sumstats
-#write_csv(sumstats, "Results/sumstats22323.csv")
+#write_csv(sumstats, "FINAL Code/Results/sumstats102323.csv")
 fit$cmdstan_diagnose()
 
 
